@@ -8,16 +8,23 @@
 </head>
 <body>
 
-<h1>Klas Komponentletare</h1>
+    <h1>Klas Komponentletare</h1>
 
-<div class="card">
-    <h2>Projekt</h2>
-    <label>Välj Excel-fil:</label>
-    <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
-</div>
+    <div class="card">
+        <h2>Projekt</h2>
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="app.js"></script>
+        <label>Välj Excel-fil:</label>
+        <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
+
+        <hr>
+
+        <div id="resultat">
+            Ingen fil inläst.
+        </div>
+    </div>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
 
 </body>
 </html>
