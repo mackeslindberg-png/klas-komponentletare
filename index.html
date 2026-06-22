@@ -8,41 +8,52 @@
 </head>
 <body>
 
-    <h1>Klas Komponentletare</h1>
+<h1>Klas Komponentletare</h1>
 
-    <div class="card">
-        <h2>Projekt</h2>
+<div class="card">
+    <h2>Projekt</h2>
 
-        <label>Välj Excel-fil:</label>
-        <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
+    <label>Välj Excel-fil:</label>
+    <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
 
-        <hr>
+    <hr>
 
-        <button id="startCamera">Starta kamera</button>
-        <button id="readNumber">Läs nummer</button>
+    <button id="startCamera">Starta kamera</button>
+    <button id="readNumber">Läs nummer</button>
 
-        <div class="camera-container">
-            <video id="camera" autoplay playsinline></video>
-
-            <div class="scan-box">
-                <div class="scan-text">RIKTA NUMRET HÄR</div>
-            </div>
-        </div>
-
-        <canvas id="snapshot" style="display:none;"></canvas>
-
-        <div id="ocrStatus"></div>
-
-        <hr>
-
-        <div id="resultat">
-            Ingen fil inläst.
+    <div class="rotation-card">
+        <label>Rotation: <span id="rotationValue">0</span>°</label>
+        <input type="range" id="rotationSlider" min="-180" max="180" value="0">
+        <div>
+            <button onclick="setRotation(0)">0°</button>
+            <button onclick="setRotation(90)">90°</button>
+            <button onclick="setRotation(180)">180°</button>
+            <button onclick="setRotation(-90)">-90°</button>
         </div>
     </div>
 
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="app.js"></script>
+    <div class="camera-container">
+        <video id="camera" autoplay playsinline></video>
+
+        <div class="scan-box">
+            <div class="scan-text">RIKTA NUMRET HÄR</div>
+        </div>
+    </div>
+
+    <canvas id="snapshot" style="display:none;"></canvas>
+
+    <div id="ocrStatus"></div>
+
+    <hr>
+
+    <div id="resultat">
+        Ingen fil inläst.
+    </div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="app.js"></script>
 
 </body>
 </html>
