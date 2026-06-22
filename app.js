@@ -1,7 +1,10 @@
 const excelFile = document.getElementById("excelFile");
 const resultat = document.getElementById("resultat");
 const startCamera = document.getElementById("startCamera");
+const readNumber = document.getElementById("readNumber");
 const camera = document.getElementById("camera");
+const snapshot = document.getElementById("snapshot");
+const ocrStatus = document.getElementById("ocrStatus");
 
 let komponenter = [];
 
@@ -123,5 +126,35 @@ startCamera.addEventListener("click", async function () {
         camera.srcObject = stream;
     } catch (error) {
         alert("Kunde inte starta kameran: " + error.message);
+    }
+});
+
+readNumber.addEventListener("click", async function () {
+    if (!camera.srcObject) {
+        alert("Starta kameran först.");
+        return;
+    }
+
+    ocrStatus.innerHTML = "Läser nummer...";
+
+    snapshot.width = camera.videoWidth;
+    snapshot.height = camera.videoHeight;
+
+    const ctx = snapshot.getContext("2d");
+    ctx.drawImage(camera, 0, 0, snapshot.width, snapshot.height);
+
+    try {
+        const result = await Tesseract.recognize(snapshot, "eng", {
+            logger: m => console.log(m)
+        });
+
+        const text = result.data.text;
+
+        ocrStatus.innerHTML = `
+            <h3>OCR-resultat</h3>
+            <pre>${text}</pre>
+        `;
+    } catch (error) {
+        ocrStatus.innerHTML = "OCR-fel: " + error.message;
     }
 });
