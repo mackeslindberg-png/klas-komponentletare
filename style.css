@@ -21,12 +21,43 @@ button {
     margin: 10px 0;
 }
 
-video {
+.camera-container {
+    position: relative;
+    display: inline-block;
     width: 100%;
-    max-width: 500px;
+    max-width: 600px;
+}
+
+#camera {
+    width: 100%;
+    max-width: 600px;
     margin-top: 10px;
     background: black;
     border-radius: 8px;
+}
+
+.scan-box {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 70%;
+    height: 120px;
+    transform: translate(-50%, -50%);
+    border: 4px solid #00ff00;
+    border-radius: 10px;
+    box-shadow: 0 0 10px #00ff00;
+    pointer-events: none;
+}
+
+.scan-text {
+    position: absolute;
+    top: -32px;
+    left: 0;
+    color: #00ff00;
+    font-weight: bold;
+    background: rgba(0,0,0,0.7);
+    padding: 4px 8px;
+    border-radius: 4px;
 }
 
 ul {
@@ -48,6 +79,7 @@ li {
     margin-top: 10px;
     border-left: 5px solid green;
 }
+
 .ok {
     border-left: 5px solid green;
     background: #e8f5e9;
@@ -63,4 +95,9 @@ li {
     padding: 10px;
     margin-top: 10px;
     border-left: 5px solid red;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-break: break-word;
 }
