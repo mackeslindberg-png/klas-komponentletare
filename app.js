@@ -8,14 +8,6 @@ const ocrStatus = document.getElementById("ocrStatus");
 
 let komponenter = [];
 
-function normalisera(varde) {
-    return String(varde || "")
-        .toUpperCase()
-        .replace(/[ÅÄ]/g, "A")
-        .replace(/Ö/g, "O")
-        .replace(/[^A-Z0-9]/g, "");
-}
-
 function normaliseraNummer(varde) {
     return String(varde || "")
         .toUpperCase()
@@ -44,8 +36,6 @@ function poangForMatch(ocrText, komponent) {
         detaljer.push("Artikelnummer hittat");
     }
 
-    // Extra stöd för Volvo/Parker-format:
-    // Ex: P55194809#T2616 0705 PG#
     if (komp && ocr.includes("P" + komp)) {
         poang += 30;
         detaljer.push("P-prefix + komponentnummer hittat");
@@ -56,10 +46,7 @@ function poangForMatch(ocrText, komponent) {
         detaljer.push("T-prefix + artikelnummer hittat");
     }
 
-    return {
-        poang,
-        detaljer
-    };
+    return { poang, detaljer };
 }
 
 function hittaBastaMatch(ocrText) {
@@ -218,41 +205,74 @@ readNumber.addEventListener("click", async function () {
     }
 
     try {
-        ocrStatus.innerHTML = "Tar bild från kameran...";
+        ocrStatus.innerHTML = "Tar bild från scan-rutan...";
 
-        snapshot.width = camera.videoWidth;
-        snapshot.height = camera.videoHeight;
+        const videoWidth = camera.videoWidth;
+        const videoHeight = camera.videoHeight;
+
+        snapshot.width = videoWidth;
+        snapshot.height = videoHeight;
 
         const ctx = snapshot.getContext("2d");
-        ctx.drawImage(camera, 0, 0, snapshot.width, snapshot.height);
+        ctx.drawImage(camera, 0, 0, videoWidth, videoHeight);
 
-        ocrStatus.innerHTML = "Bild tagen. Läser text...";
+        const cropX = videoWidth * 0.15;
+        const cropY = videoHeight * 0.38;
+        const cropWidth = videoWidth * 0.70;
+        const cropHeight = videoHeight * 0.24;
 
-        const result = await Tesseract.recognize(snapshot, "eng", {
+        const cropCanvas = document.createElement("canvas");
+        cropCanvas.width = cropWidth;
+        cropCanvas.height = cropHeight;
+
+        const cropCtx = cropCanvas.getContext("2d");
+        cropCtx.drawImage(
+            snapshot,
+            cropX,
+            cropY,
+            cropWidth,
+            cropHeight,
+            0,
+            0,
+            cropWidth,
+            cropHeight
+        );
+
+        ocrStatus.innerHTML = `
+            <h3>OCR-beskärning</h3>
+            <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+            <p>Läser text...</p>
+        `;
+
+        const result = await Tesseract.recognize(cropCanvas, "eng", {
             logger: function (m) {
                 if (m.status) {
-                    ocrStatus.innerHTML =
-                        "OCR: " + m.status +
-                        (m.progress ? " " + Math.round(m.progress * 100) + "%" : "");
+                    ocrStatus.innerHTML = `
+                        <h3>OCR-beskärning</h3>
+                        <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+                        <p>OCR: ${m.status} ${m.progress ? Math.round(m.progress * 100) + "%" : ""}</p>
+                    `;
                 }
             }
         });
 
         const text = result.data.text || "";
-        tolkaOcrText(text);
+        tolkaOcrText(text, cropCanvas);
 
     } catch (error) {
         ocrStatus.innerHTML = "OCR-fel: " + error.message;
     }
 });
 
-function tolkaOcrText(text) {
+function tolkaOcrText(text, cropCanvas) {
     const match = hittaBastaMatch(text);
 
     if (!match || match.poang < 80) {
         ocrStatus.innerHTML = `
             <div class="fel">
                 <h3>Ingen säker träff</h3>
+                <p><strong>OCR-beskärning:</strong></p>
+                <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
                 <p>OCR läste:</p>
                 <pre>${text}</pre>
             </div>
@@ -261,8 +281,6 @@ function tolkaOcrText(text) {
     }
 
     const k = match.komponent;
-
-    const kompHittad = normaliseraNummer(text).includes(normaliseraNummer(k.komp));
     const artHittad = normaliseraNummer(text).includes(normaliseraNummer(k.art));
 
     k.kontrollerad = true;
@@ -276,6 +294,10 @@ function tolkaOcrText(text) {
                 <p>Komp.nr: ${k.komp}</p>
                 <p>Art.nr: ${k.art}</p>
                 <p>${match.detaljer.join(", ")}</p>
+                <p><strong>OCR-beskärning:</strong></p>
+                <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+                <p>OCR läste:</p>
+                <pre>${text}</pre>
             </div>
         `;
     } else {
@@ -285,6 +307,8 @@ function tolkaOcrText(text) {
                 <p><strong>${k.typ}</strong></p>
                 <p>Komp.nr: ${k.komp}</p>
                 <p>Förväntat art.nr: ${k.art}</p>
+                <p><strong>OCR-beskärning:</strong></p>
+                <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
                 <p>OCR läste:</p>
                 <pre>${text}</pre>
             </div>
