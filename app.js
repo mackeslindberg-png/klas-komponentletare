@@ -11,14 +11,73 @@ let komponenter = [];
 function normalisera(varde) {
     return String(varde || "")
         .toUpperCase()
-        .replace(/\s/g, "")
-        .replace(/-/g, "")
-        .replace(/#/g, "")
-        .trim();
+        .replace(/[ÅÄ]/g, "A")
+        .replace(/Ö/g, "O")
+        .replace(/[^A-Z0-9]/g, "");
 }
 
-function innehallerNormaliserat(text, sokvarde) {
-    return normalisera(text).includes(normalisera(sokvarde));
+function normaliseraNummer(varde) {
+    return String(varde || "")
+        .toUpperCase()
+        .replace(/[OQ]/g, "0")
+        .replace(/[IL]/g, "1")
+        .replace(/S/g, "5")
+        .replace(/B/g, "8")
+        .replace(/[^A-Z0-9]/g, "");
+}
+
+function poangForMatch(ocrText, komponent) {
+    const ocr = normaliseraNummer(ocrText);
+    const komp = normaliseraNummer(komponent.komp);
+    const art = normaliseraNummer(komponent.art);
+
+    let poang = 0;
+    let detaljer = [];
+
+    if (komp && ocr.includes(komp)) {
+        poang += 100;
+        detaljer.push("Komponentnummer hittat");
+    }
+
+    if (art && ocr.includes(art)) {
+        poang += 100;
+        detaljer.push("Artikelnummer hittat");
+    }
+
+    // Extra stöd för Volvo/Parker-format:
+    // Ex: P55194809#T2616 0705 PG#
+    if (komp && ocr.includes("P" + komp)) {
+        poang += 30;
+        detaljer.push("P-prefix + komponentnummer hittat");
+    }
+
+    if (art && ocr.includes("T" + art)) {
+        poang += 30;
+        detaljer.push("T-prefix + artikelnummer hittat");
+    }
+
+    return {
+        poang,
+        detaljer
+    };
+}
+
+function hittaBastaMatch(ocrText) {
+    let basta = null;
+
+    for (const komponent of komponenter) {
+        const match = poangForMatch(ocrText, komponent);
+
+        if (!basta || match.poang > basta.poang) {
+            basta = {
+                komponent,
+                poang: match.poang,
+                detaljer: match.detaljer
+            };
+        }
+    }
+
+    return basta;
 }
 
 excelFile.addEventListener("change", function () {
@@ -60,8 +119,8 @@ excelFile.addEventListener("change", function () {
 });
 
 function visaLista() {
-    let kontrollerade = komponenter.filter(k => k.kontrollerad).length;
-    let avvikelser = komponenter.filter(k => k.avvikelse).length;
+    const kontrollerade = komponenter.filter(k => k.kontrollerad).length;
+    const avvikelser = komponenter.filter(k => k.avvikelse).length;
 
     let html = "<h3>Excel inläst</h3>";
     html += "<p>Antal komponenter: " + komponenter.length + "</p>";
@@ -69,8 +128,8 @@ function visaLista() {
     html += "<p>Avvikelser: " + avvikelser + "</p>";
 
     html += `
-        <label>Sök komponentnummer:</label><br>
-        <input type="text" id="sokRuta" placeholder="Ex: 41714">
+        <label>Sök komponentnummer eller artikelnummer:</label><br>
+        <input type="text" id="sokRuta" placeholder="Ex: 55194809 eller 2616 0705 PG">
         <button onclick="sokKomponent()">Sök</button>
         <div id="sokResultat"></div>
         <hr>
@@ -101,10 +160,20 @@ function visaLista() {
 }
 
 function sokKomponent() {
-    const sok = normalisera(document.getElementById("sokRuta").value);
+    const sok = document.getElementById("sokRuta").value;
     const sokResultat = document.getElementById("sokResultat");
 
-    const hittad = komponenter.find(k => normalisera(k.komp) === sok);
+    if (!sok) {
+        sokResultat.innerHTML = "<p>Skriv ett nummer.</p>";
+        return;
+    }
+
+    const hittad = komponenter.find(k =>
+        normaliseraNummer(k.komp).includes(normaliseraNummer(sok)) ||
+        normaliseraNummer(k.art).includes(normaliseraNummer(sok)) ||
+        normaliseraNummer(sok).includes(normaliseraNummer(k.komp)) ||
+        normaliseraNummer(sok).includes(normaliseraNummer(k.art))
+    );
 
     if (!hittad) {
         sokResultat.innerHTML = "<p><strong>Ingen träff.</strong></p>";
@@ -170,7 +239,6 @@ readNumber.addEventListener("click", async function () {
         });
 
         const text = result.data.text || "";
-
         tolkaOcrText(text);
 
     } catch (error) {
@@ -179,43 +247,44 @@ readNumber.addEventListener("click", async function () {
 });
 
 function tolkaOcrText(text) {
-    const hittadKomponent = komponenter.find(k =>
-        innehallerNormaliserat(text, k.komp)
-    );
+    const match = hittaBastaMatch(text);
 
-    if (!hittadKomponent) {
+    if (!match || match.poang < 80) {
         ocrStatus.innerHTML = `
-            <h3>Ingen komponent hittad</h3>
-            <p>OCR läste:</p>
-            <pre>${text}</pre>
+            <div class="fel">
+                <h3>Ingen säker träff</h3>
+                <p>OCR läste:</p>
+                <pre>${text}</pre>
+            </div>
         `;
         return;
     }
 
-    const artikelStammer = innehallerNormaliserat(text, hittadKomponent.art);
+    const k = match.komponent;
 
-    if (artikelStammer) {
-        hittadKomponent.kontrollerad = true;
-        hittadKomponent.avvikelse = false;
+    const kompHittad = normaliseraNummer(text).includes(normaliseraNummer(k.komp));
+    const artHittad = normaliseraNummer(text).includes(normaliseraNummer(k.art));
 
+    k.kontrollerad = true;
+    k.avvikelse = !artHittad;
+
+    if (artHittad) {
         ocrStatus.innerHTML = `
             <div class="match">
                 <h3>✅ OK</h3>
-                <p><strong>${hittadKomponent.typ}</strong></p>
-                <p>Komp.nr: ${hittadKomponent.komp}</p>
-                <p>Art.nr: ${hittadKomponent.art}</p>
+                <p><strong>${k.typ}</strong></p>
+                <p>Komp.nr: ${k.komp}</p>
+                <p>Art.nr: ${k.art}</p>
+                <p>${match.detaljer.join(", ")}</p>
             </div>
         `;
     } else {
-        hittadKomponent.kontrollerad = true;
-        hittadKomponent.avvikelse = true;
-
         ocrStatus.innerHTML = `
             <div class="fel">
-                <h3>❌ Mismatch</h3>
-                <p><strong>${hittadKomponent.typ}</strong></p>
-                <p>Komp.nr hittat: ${hittadKomponent.komp}</p>
-                <p>Förväntat art.nr: ${hittadKomponent.art}</p>
+                <h3>⚠️ Komponent hittad, artikelnummer ej bekräftat</h3>
+                <p><strong>${k.typ}</strong></p>
+                <p>Komp.nr: ${k.komp}</p>
+                <p>Förväntat art.nr: ${k.art}</p>
                 <p>OCR läste:</p>
                 <pre>${text}</pre>
             </div>
