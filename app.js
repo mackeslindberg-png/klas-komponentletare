@@ -32,53 +32,101 @@ function normaliseraNummer(varde) {
         .replace(/[^A-Z0-9]/g, "");
 }
 
-function poangForMatch(ocrText, komponent) {
-    const ocr = normaliseraNummer(ocrText);
+function skapaKandidater(text) {
+    const ren = normaliseraNummer(text);
+    const delar = ren.match(/[A-Z0-9]{4,}/g) || [];
+    const kandidater = new Set();
+
+    delar.forEach(d => {
+        kandidater.add(d);
+
+        const baraSiffror = d.replace(/[^0-9]/g, "");
+        if (baraSiffror.length >= 4) kandidater.add(baraSiffror);
+
+        if (d.length > 6) {
+            kandidater.add(d.slice(-6));
+            kandidater.add(d.slice(-7));
+            kandidater.add(d.slice(-8));
+        }
+
+        if (baraSiffror.length > 6) {
+            kandidater.add(baraSiffror.slice(-6));
+            kandidater.add(baraSiffror.slice(-7));
+            kandidater.add(baraSiffror.slice(-8));
+        }
+    });
+
+    return Array.from(kandidater).filter(k => k.length >= 4);
+}
+
+function likhet(a, b) {
+    a = normaliseraNummer(a);
+    b = normaliseraNummer(b);
+
+    if (!a || !b) return 0;
+    if (a === b) return 100;
+    if (a.includes(b) || b.includes(a)) return 85;
+
+    let kort = a.length <= b.length ? a : b;
+    let lang = a.length > b.length ? a : b;
+
+    let basta = 0;
+
+    for (let i = 0; i <= lang.length - kort.length; i++) {
+        let del = lang.slice(i, i + kort.length);
+        let samma = 0;
+
+        for (let j = 0; j < kort.length; j++) {
+            if (kort[j] === del[j]) samma++;
+        }
+
+        let procent = Math.round((samma / kort.length) * 100);
+        if (procent > basta) basta = procent;
+    }
+
+    return basta;
+}
+
+function poangForKomponent(ocrText, komponent) {
+    const kandidater = skapaKandidater(ocrText);
     const komp = normaliseraNummer(komponent.komp);
     const art = normaliseraNummer(komponent.art);
 
     let poang = 0;
     let detaljer = [];
 
-    if (komp && ocr.includes(komp)) {
-        poang += 100;
-        detaljer.push("Komponentnummer hittat");
-    }
+    kandidater.forEach(k => {
+        const kompLikhet = likhet(k, komp);
+        const artLikhet = likhet(k, art);
 
-    if (art && ocr.includes(art)) {
-        poang += 100;
-        detaljer.push("Artikelnummer hittat");
-    }
+        if (kompLikhet > poang) {
+            poang = kompLikhet;
+            detaljer = [`Kandidat ${k} liknar komp.nr ${komponent.komp} (${kompLikhet}%)`];
+        }
 
-    if (komp && ocr.includes("P" + komp)) {
-        poang += 30;
-        detaljer.push("P-prefix + komponentnummer hittat");
-    }
+        if (artLikhet > poang) {
+            poang = artLikhet;
+            detaljer = [`Kandidat ${k} liknar art.nr ${komponent.art} (${artLikhet}%)`];
+        }
+    });
 
-    if (art && ocr.includes("T" + art)) {
-        poang += 30;
-        detaljer.push("T-prefix + artikelnummer hittat");
-    }
-
-    return { poang, detaljer };
+    return { poang, detaljer, kandidater };
 }
 
-function hittaBastaMatch(ocrText) {
-    let basta = null;
-
-    for (const komponent of komponenter) {
-        const match = poangForMatch(ocrText, komponent);
-
-        if (!basta || match.poang > basta.poang) {
-            basta = {
-                komponent,
+function hittaToppMatcher(ocrText) {
+    return komponenter
+        .map(k => {
+            const match = poangForKomponent(ocrText, k);
+            return {
+                komponent: k,
                 poang: match.poang,
-                detaljer: match.detaljer
+                detaljer: match.detaljer,
+                kandidater: match.kandidater
             };
-        }
-    }
-
-    return basta;
+        })
+        .filter(m => m.poang >= 60)
+        .sort((a, b) => b.poang - a.poang)
+        .slice(0, 3);
 }
 
 excelFile.addEventListener("change", function () {
@@ -141,11 +189,8 @@ function visaLista() {
     komponenter.forEach(k => {
         let klass = "";
 
-        if (k.avvikelse) {
-            klass = "avvikelse";
-        } else if (k.kontrollerad) {
-            klass = "ok";
-        }
+        if (k.avvikelse) klass = "avvikelse";
+        else if (k.kontrollerad) klass = "ok";
 
         html += `
             <li class="${klass}">
@@ -164,31 +209,65 @@ function sokKomponent() {
     const sok = document.getElementById("sokRuta").value;
     const sokResultat = document.getElementById("sokResultat");
 
-    if (!sok) {
-        sokResultat.innerHTML = "<p>Skriv ett nummer.</p>";
-        return;
-    }
+    const matcher = hittaToppMatcher(sok);
 
-    const hittad = komponenter.find(k =>
-        normaliseraNummer(k.komp).includes(normaliseraNummer(sok)) ||
-        normaliseraNummer(k.art).includes(normaliseraNummer(sok)) ||
-        normaliseraNummer(sok).includes(normaliseraNummer(k.komp)) ||
-        normaliseraNummer(sok).includes(normaliseraNummer(k.art))
-    );
-
-    if (!hittad) {
+    if (matcher.length === 0) {
         sokResultat.innerHTML = "<p><strong>Ingen träff.</strong></p>";
         return;
     }
 
-    sokResultat.innerHTML = `
-        <div class="match">
-            <h3>Träff</h3>
-            <p><strong>${hittad.typ}</strong></p>
-            <p>Komp.nr: ${hittad.komp}</p>
-            <p>Art.nr: ${hittad.art}</p>
-        </div>
+    sokResultat.innerHTML = skapaMatchHtml(matcher, sok, null);
+}
+
+function markeraOk(index) {
+    const k = komponenter[index];
+    k.kontrollerad = true;
+    k.avvikelse = false;
+    visaLista();
+}
+
+function markeraAvvikelse(index) {
+    const k = komponenter[index];
+    k.kontrollerad = true;
+    k.avvikelse = true;
+    visaLista();
+}
+
+function skapaMatchHtml(matcher, ocrText, usedCanvas) {
+    let html = "";
+
+    if (usedCanvas) {
+        html += `
+            <p><strong>OCR-beskärning:</strong></p>
+            <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
+        `;
+    }
+
+    html += "<h3>Möjliga träffar</h3>";
+
+    matcher.forEach((m, i) => {
+        const k = m.komponent;
+        const index = komponenter.indexOf(k);
+
+        html += `
+            <div class="match">
+                <h3>${i + 1}. ${k.typ}</h3>
+                <p>Säkerhet: ${m.poang}%</p>
+                <p>Komp.nr: ${k.komp}</p>
+                <p>Art.nr: ${k.art}</p>
+                <p>${m.detaljer.join(", ")}</p>
+                <button onclick="markeraOk(${index})">Markera OK</button>
+                <button onclick="markeraAvvikelse(${index})">Markera avvikelse</button>
+            </div>
+        `;
+    });
+
+    html += `
+        <p><strong>OCR/text läste:</strong></p>
+        <pre>${ocrText}</pre>
     `;
+
+    return html;
 }
 
 startCamera.addEventListener("click", async function () {
@@ -220,7 +299,6 @@ function roteraCanvas(sourceCanvas, grader) {
     rotatedCanvas.height = Math.floor(width * sin + height * cos);
 
     const ctx = rotatedCanvas.getContext("2d");
-
     ctx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
     ctx.rotate(radians);
     ctx.drawImage(sourceCanvas, -width / 2, -height / 2);
@@ -296,63 +374,24 @@ readNumber.addEventListener("click", async function () {
         });
 
         const text = result.data.text || "";
-        tolkaOcrText(text, rotatedCanvas);
+        const matcher = hittaToppMatcher(text);
+
+        if (matcher.length === 0) {
+            ocrStatus.innerHTML = `
+                <div class="fel">
+                    <h3>Ingen träff</h3>
+                    <p><strong>OCR-beskärning:</strong></p>
+                    <img src="${rotatedCanvas.toDataURL()}" style="max-width:100%;">
+                    <p>OCR läste:</p>
+                    <pre>${text}</pre>
+                </div>
+            `;
+            return;
+        }
+
+        ocrStatus.innerHTML = skapaMatchHtml(matcher, text, rotatedCanvas);
 
     } catch (error) {
         ocrStatus.innerHTML = "OCR-fel: " + error.message;
     }
 });
-
-function tolkaOcrText(text, usedCanvas) {
-    const match = hittaBastaMatch(text);
-
-    if (!match || match.poang < 80) {
-        ocrStatus.innerHTML = `
-            <div class="fel">
-                <h3>Ingen säker träff</h3>
-                <p><strong>OCR-beskärning:</strong></p>
-                <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
-                <p>OCR läste:</p>
-                <pre>${text}</pre>
-            </div>
-        `;
-        return;
-    }
-
-    const k = match.komponent;
-    const artHittad = normaliseraNummer(text).includes(normaliseraNummer(k.art));
-
-    k.kontrollerad = true;
-    k.avvikelse = !artHittad;
-
-    if (artHittad) {
-        ocrStatus.innerHTML = `
-            <div class="match">
-                <h3>✅ OK</h3>
-                <p><strong>${k.typ}</strong></p>
-                <p>Komp.nr: ${k.komp}</p>
-                <p>Art.nr: ${k.art}</p>
-                <p>${match.detaljer.join(", ")}</p>
-                <p><strong>OCR-beskärning:</strong></p>
-                <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
-                <p>OCR läste:</p>
-                <pre>${text}</pre>
-            </div>
-        `;
-    } else {
-        ocrStatus.innerHTML = `
-            <div class="fel">
-                <h3>⚠️ Komponent hittad, artikelnummer ej bekräftat</h3>
-                <p><strong>${k.typ}</strong></p>
-                <p>Komp.nr: ${k.komp}</p>
-                <p>Förväntat art.nr: ${k.art}</p>
-                <p><strong>OCR-beskärning:</strong></p>
-                <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
-                <p>OCR läste:</p>
-                <pre>${text}</pre>
-            </div>
-        `;
-    }
-
-    visaLista();
-}
