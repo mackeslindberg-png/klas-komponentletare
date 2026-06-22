@@ -18,7 +18,18 @@ h1 {
 button {
     padding: 10px 15px;
     font-size: 16px;
+    margin: 5px 0;
+}
+
+.rotation-card {
     margin: 10px 0;
+    padding: 10px;
+    background: #eef3f8;
+    border-radius: 8px;
+}
+
+#rotationSlider {
+    width: 100%;
 }
 
 .camera-container {
