@@ -19,8 +19,12 @@
         <hr>
 
         <button id="startCamera">Starta kamera</button>
+        <button id="readNumber">Läs nummer</button>
 
         <video id="camera" autoplay playsinline></video>
+        <canvas id="snapshot" style="display:none;"></canvas>
+
+        <div id="ocrStatus"></div>
 
         <hr>
 
@@ -30,6 +34,7 @@
     </div>
 
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="app.js"></script>
 
 </body>
