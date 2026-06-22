@@ -1,5 +1,7 @@
 const excelFile = document.getElementById("excelFile");
 const resultat = document.getElementById("resultat");
+const startCamera = document.getElementById("startCamera");
+const camera = document.getElementById("camera");
 
 let komponenter = [];
 
@@ -108,3 +110,18 @@ function sokKomponent() {
         </div>
     `;
 }
+
+startCamera.addEventListener("click", async function () {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: "environment"
+            },
+            audio: false
+        });
+
+        camera.srcObject = stream;
+    } catch (error) {
+        alert("Kunde inte starta kameran: " + error.message);
+    }
+});
