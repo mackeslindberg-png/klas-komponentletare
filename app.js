@@ -19,20 +19,12 @@ function normalisera(varde) {
 excelFile.addEventListener("change", function () {
     const file = excelFile.files[0];
 
-    if (!file) {
-        resultat.innerHTML = "Ingen fil vald.";
-        return;
-    }
-
     const reader = new FileReader();
 
     reader.onload = function (event) {
         const data = new Uint8Array(event.target.result);
         const workbook = XLSX.read(data, { type: "array" });
-
-        const firstSheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[firstSheetName];
-
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         komponenter = [];
@@ -40,15 +32,11 @@ excelFile.addEventListener("change", function () {
         for (let i = 1; i < rows.length; i++) {
             const rad = rows[i];
 
-            const komponentTyp = rad[2];
-            const komponentNummer = rad[3];
-            const artikelNummer = rad[5];
-
-            if (komponentTyp && komponentNummer && artikelNummer) {
+            if (rad[2] && rad[3] && rad[5]) {
                 komponenter.push({
-                    typ: komponentTyp,
-                    komp: String(komponentNummer),
-                    art: String(artikelNummer)
+                    typ: String(rad[2]),
+                    komp: String(rad[3]),
+                    art: String(rad[5])
                 });
             }
         }
@@ -74,28 +62,22 @@ function visaLista() {
     html += "<ul>";
 
     komponenter.forEach(k => {
-        html += "<li>";
-        html += "<strong>" + k.typ + "</strong><br>";
-        html += "Komp.nr: " + k.komp + "<br>";
-        html += "Art.nr: " + k.art;
-        html += "</li>";
+        html += `
+            <li>
+                <strong>${k.typ}</strong><br>
+                Komp.nr: ${k.komp}<br>
+                Art.nr: ${k.art}
+            </li>
+        `;
     });
 
     html += "</ul>";
-
     resultat.innerHTML = html;
 }
 
 function sokKomponent() {
-    const sokRuta = document.getElementById("sokRuta");
+    const sok = normalisera(document.getElementById("sokRuta").value);
     const sokResultat = document.getElementById("sokResultat");
-
-    const sok = normalisera(sokRuta.value);
-
-    if (!sok) {
-        sokResultat.innerHTML = "<p>Skriv ett komponentnummer.</p>";
-        return;
-    }
 
     const hittad = komponenter.find(k => normalisera(k.komp) === sok);
 
@@ -116,39 +98,48 @@ function sokKomponent() {
 
 startCamera.addEventListener("click", async function () {
     try {
+        ocrStatus.innerHTML = "Startar kamera...";
+
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: "environment"
-            },
+            video: { facingMode: "environment" },
             audio: false
         });
 
         camera.srcObject = stream;
+        ocrStatus.innerHTML = "Kamera startad.";
     } catch (error) {
-        alert("Kunde inte starta kameran: " + error.message);
+        ocrStatus.innerHTML = "Kamerafel: " + error.message;
     }
 });
 
 readNumber.addEventListener("click", async function () {
     if (!camera.srcObject) {
-        alert("Starta kameran först.");
+        ocrStatus.innerHTML = "Starta kameran först.";
         return;
     }
 
-    ocrStatus.innerHTML = "Läser nummer...";
-
-    snapshot.width = camera.videoWidth;
-    snapshot.height = camera.videoHeight;
-
-    const ctx = snapshot.getContext("2d");
-    ctx.drawImage(camera, 0, 0, snapshot.width, snapshot.height);
-
     try {
+        ocrStatus.innerHTML = "Tar bild från kameran...";
+
+        snapshot.width = camera.videoWidth;
+        snapshot.height = camera.videoHeight;
+
+        const ctx = snapshot.getContext("2d");
+        ctx.drawImage(camera, 0, 0, snapshot.width, snapshot.height);
+
+        ocrStatus.innerHTML = "Bild tagen. Startar textläsning...";
+
         const result = await Tesseract.recognize(snapshot, "eng", {
-            logger: m => console.log(m)
+            logger: function (m) {
+                if (m.status) {
+                    ocrStatus.innerHTML =
+                        "OCR: " + m.status +
+                        (m.progress ? " " + Math.round(m.progress * 100) + "%" : "");
+                }
+            }
         });
 
-        const text = result.data.text;
+        const text = result.data.text || "";
 
         ocrStatus.innerHTML = `
             <h3>OCR-resultat</h3>
