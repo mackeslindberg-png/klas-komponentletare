@@ -21,7 +21,14 @@
         <button id="startCamera">Starta kamera</button>
         <button id="readNumber">Läs nummer</button>
 
-        <video id="camera" autoplay playsinline></video>
+        <div class="camera-container">
+            <video id="camera" autoplay playsinline></video>
+
+            <div class="scan-box">
+                <div class="scan-text">RIKTA NUMRET HÄR</div>
+            </div>
+        </div>
+
         <canvas id="snapshot" style="display:none;"></canvas>
 
         <div id="ocrStatus"></div>
