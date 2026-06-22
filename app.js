@@ -5,8 +5,22 @@ const readNumber = document.getElementById("readNumber");
 const camera = document.getElementById("camera");
 const snapshot = document.getElementById("snapshot");
 const ocrStatus = document.getElementById("ocrStatus");
+const rotationSlider = document.getElementById("rotationSlider");
+const rotationValue = document.getElementById("rotationValue");
 
 let komponenter = [];
+let rotation = 0;
+
+rotationSlider.addEventListener("input", function () {
+    rotation = Number(rotationSlider.value);
+    rotationValue.textContent = rotation;
+});
+
+function setRotation(value) {
+    rotation = value;
+    rotationSlider.value = value;
+    rotationValue.textContent = value;
+}
 
 function normaliseraNummer(varde) {
     return String(varde || "")
@@ -193,6 +207,27 @@ startCamera.addEventListener("click", async function () {
     }
 });
 
+function roteraCanvas(sourceCanvas, grader) {
+    const radians = grader * Math.PI / 180;
+    const sin = Math.abs(Math.sin(radians));
+    const cos = Math.abs(Math.cos(radians));
+
+    const width = sourceCanvas.width;
+    const height = sourceCanvas.height;
+
+    const rotatedCanvas = document.createElement("canvas");
+    rotatedCanvas.width = Math.floor(width * cos + height * sin);
+    rotatedCanvas.height = Math.floor(width * sin + height * cos);
+
+    const ctx = rotatedCanvas.getContext("2d");
+
+    ctx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+    ctx.rotate(radians);
+    ctx.drawImage(sourceCanvas, -width / 2, -height / 2);
+
+    return rotatedCanvas;
+}
+
 readNumber.addEventListener("click", async function () {
     if (!camera.srcObject) {
         ocrStatus.innerHTML = "Starta kameran först.";
@@ -238,18 +273,22 @@ readNumber.addEventListener("click", async function () {
             cropHeight
         );
 
+        const rotatedCanvas = roteraCanvas(cropCanvas, rotation);
+
         ocrStatus.innerHTML = `
             <h3>OCR-beskärning</h3>
-            <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+            <p>Rotation: ${rotation}°</p>
+            <img src="${rotatedCanvas.toDataURL()}" style="max-width:100%;">
             <p>Läser text...</p>
         `;
 
-        const result = await Tesseract.recognize(cropCanvas, "eng", {
+        const result = await Tesseract.recognize(rotatedCanvas, "eng", {
             logger: function (m) {
                 if (m.status) {
                     ocrStatus.innerHTML = `
                         <h3>OCR-beskärning</h3>
-                        <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+                        <p>Rotation: ${rotation}°</p>
+                        <img src="${rotatedCanvas.toDataURL()}" style="max-width:100%;">
                         <p>OCR: ${m.status} ${m.progress ? Math.round(m.progress * 100) + "%" : ""}</p>
                     `;
                 }
@@ -257,14 +296,14 @@ readNumber.addEventListener("click", async function () {
         });
 
         const text = result.data.text || "";
-        tolkaOcrText(text, cropCanvas);
+        tolkaOcrText(text, rotatedCanvas);
 
     } catch (error) {
         ocrStatus.innerHTML = "OCR-fel: " + error.message;
     }
 });
 
-function tolkaOcrText(text, cropCanvas) {
+function tolkaOcrText(text, usedCanvas) {
     const match = hittaBastaMatch(text);
 
     if (!match || match.poang < 80) {
@@ -272,7 +311,7 @@ function tolkaOcrText(text, cropCanvas) {
             <div class="fel">
                 <h3>Ingen säker träff</h3>
                 <p><strong>OCR-beskärning:</strong></p>
-                <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+                <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
                 <p>OCR läste:</p>
                 <pre>${text}</pre>
             </div>
@@ -295,7 +334,7 @@ function tolkaOcrText(text, cropCanvas) {
                 <p>Art.nr: ${k.art}</p>
                 <p>${match.detaljer.join(", ")}</p>
                 <p><strong>OCR-beskärning:</strong></p>
-                <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+                <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
                 <p>OCR läste:</p>
                 <pre>${text}</pre>
             </div>
@@ -308,7 +347,7 @@ function tolkaOcrText(text, cropCanvas) {
                 <p>Komp.nr: ${k.komp}</p>
                 <p>Förväntat art.nr: ${k.art}</p>
                 <p><strong>OCR-beskärning:</strong></p>
-                <img src="${cropCanvas.toDataURL()}" style="max-width:100%;">
+                <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
                 <p>OCR läste:</p>
                 <pre>${text}</pre>
             </div>
