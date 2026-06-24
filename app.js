@@ -1,4 +1,5 @@
 const excelFile = document.getElementById("excelFile");
+const listImage = document.getElementById("listImage");
 const resultat = document.getElementById("resultat");
 const startCamera = document.getElementById("startCamera");
 const startScan = document.getElementById("startScan");
@@ -422,4 +423,100 @@ async function körSmartScan() {
     }
 
     scanningBusy = false;
+}
+listImage.addEventListener("change", async function () {
+    const file = listImage.files[0];
+
+    if (!file) {
+        resultat.innerHTML = "Ingen bild vald.";
+        return;
+    }
+
+    resultat.innerHTML = "Läser komponentlista från bild...";
+
+    try {
+        const result = await Tesseract.recognize(file, "eng", {
+            logger: function (m) {
+                if (m.status) {
+                    resultat.innerHTML =
+                        "OCR lista: " + m.status +
+                        (m.progress ? " " + Math.round(m.progress * 100) + "%" : "");
+                }
+            }
+        });
+
+        const text = result.data.text || "";
+
+        byggListaFranBildText(text);
+
+    } catch (error) {
+        resultat.innerHTML = "Kunde inte läsa listbilden: " + error.message;
+    }
+});
+
+function byggListaFranBildText(text) {
+    const rader = text
+        .split("\n")
+        .map(rad => rad.trim())
+        .filter(rad => rad.length > 0);
+
+    let hittade = [];
+
+    rader.forEach(rad => {
+        const nummer = rad.match(/[A-Z0-9][A-Z0-9\s\-]{3,}/gi) || [];
+
+        if (nummer.length >= 2) {
+            const renRad = rad.replace(/\s+/g, " ").trim();
+
+            hittade.push({
+                rå: renRad,
+                typ: "Okänd komponent",
+                komp: nummer[0].trim(),
+                art: nummer[nummer.length - 1].trim(),
+                kontrollerad: false,
+                avvikelse: false
+            });
+        }
+    });
+
+    if (hittade.length === 0) {
+        resultat.innerHTML = `
+            <div class="fel">
+                <h3>Ingen lista hittad</h3>
+                <p>OCR läste:</p>
+                <pre>${text}</pre>
+            </div>
+        `;
+        return;
+    }
+
+    komponenter = hittade;
+
+    let html = `
+        <div class="match">
+            <h3>Lista skapad från bild</h3>
+            <p>Hittade ${komponenter.length} möjliga rader.</p>
+            <p><strong>Viktigt:</strong> kontrollera att komp.nr och art.nr hamnat rätt.</p>
+        </div>
+    `;
+
+    html += "<h3>OCR-text</h3>";
+    html += `<pre>${text}</pre>`;
+
+    html += "<h3>Tolkad lista</h3><ul>";
+
+    komponenter.forEach(k => {
+        html += `
+            <li>
+                <strong>${k.typ}</strong><br>
+                Komp.nr: ${k.komp}<br>
+                Art.nr: ${k.art}<br>
+                <small>${k.rå}</small>
+            </li>
+        `;
+    });
+
+    html += "</ul>";
+
+    resultat.innerHTML = html;
 }
