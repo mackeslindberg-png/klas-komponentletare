@@ -428,9 +428,15 @@ async function körSmartScan() {
                     <img src="${bästaBild.toDataURL()}" style="max-width:100%;">
                 </div>
             `;
-        } else {
-            ocrStatus.innerHTML = skapaMatchHtml(bästaMatcher, bästaText, bästaBild);
-        }
+       } else {
+    scanning = false;
+    scanningBusy = false;
+    clearInterval(scanTimer);
+    scanInfo.innerHTML = "Scan: pausad - träff hittad";
+
+    ocrStatus.innerHTML = skapaMatchHtml(bästaMatcher, bästaText, bästaBild);
+    return;
+}
 
     } catch (error) {
         ocrStatus.innerHTML = "Scan-fel: " + error.message;
