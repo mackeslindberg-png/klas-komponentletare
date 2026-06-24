@@ -88,19 +88,26 @@ function matchaMotLista(text) {
     komponenter.forEach(k => {
         let bästaPoäng = 0;
         let bästaText = "";
+        let matchTyp = "";
 
         kandidater.forEach(kandidat => {
-            const kompPoäng = likhet(kandidat, k.komp);
             const artPoäng = likhet(kandidat, k.art);
+            const kompPoäng = likhet(kandidat, k.komp);
 
-            if (kompPoäng > bästaPoäng) {
-                bästaPoäng = kompPoäng;
-                bästaText = `Kandidat ${kandidat} liknar komp.nr ${k.komp}`;
+            // Prioritera art.nr eftersom stansade nummer oftast är art.nr
+            let viktadArtPoäng = artPoäng;
+            if (artPoäng >= 85) viktadArtPoäng += 5;
+
+            if (viktadArtPoäng > bästaPoäng) {
+                bästaPoäng = Math.min(viktadArtPoäng, 100);
+                bästaText = `Kandidat ${kandidat} liknar art.nr ${k.art}`;
+                matchTyp = "art";
             }
 
-            if (artPoäng > bästaPoäng) {
-                bästaPoäng = artPoäng;
-                bästaText = `Kandidat ${kandidat} liknar art.nr ${k.art}`;
+            if (kompPoäng > bästaPoäng && artPoäng < 85) {
+                bästaPoäng = kompPoäng;
+                bästaText = `Kandidat ${kandidat} liknar komp.nr ${k.komp}`;
+                matchTyp = "komp";
             }
         });
 
@@ -108,13 +115,19 @@ function matchaMotLista(text) {
             matcher.push({
                 komponent: k,
                 poäng: bästaPoäng,
-                text: bästaText
+                text: bästaText,
+                matchTyp
             });
         }
     });
 
     return matcher
-        .sort((a, b) => b.poäng - a.poäng)
+        .sort((a, b) => {
+            if (b.poäng !== a.poäng) return b.poäng - a.poäng;
+            if (a.matchTyp === "art" && b.matchTyp !== "art") return -1;
+            if (b.matchTyp === "art" && a.matchTyp !== "art") return 1;
+            return 0;
+        })
         .slice(0, 3);
 }
 
@@ -167,7 +180,7 @@ function visaLista() {
 
     html += `
         <label>Sök manuellt:</label><br>
-        <input type="text" id="sokRuta" placeholder="Ex: 03H350105">
+        <input type="text" id="sokRuta" placeholder="Ex: 0326062809">
         <button onclick="sokManuellt()">Sök</button>
         <div id="sokResultat"></div>
         <hr>
@@ -227,6 +240,7 @@ function skapaMatchHtml(matcher, text, bild) {
                 <h3>Vill du godkänna?</h3>
                 <p><strong>${k.typ}</strong></p>
                 <p>Säkerhet: ${bästa.poäng}%</p>
+                <p>Träff på: ${bästa.matchTyp === "art" ? "Art.nr" : "Komp.nr"}</p>
                 <p>Komp.nr: ${k.komp}</p>
                 <p>Art.nr: ${k.art}</p>
                 <p>${bästa.text}</p>
@@ -247,6 +261,7 @@ function skapaMatchHtml(matcher, text, bild) {
             <div class="match">
                 <h3>${i + 1}. ${k.typ}</h3>
                 <p>Säkerhet: ${m.poäng}%</p>
+                <p>Träff på: ${m.matchTyp === "art" ? "Art.nr" : "Komp.nr"}</p>
                 <p>Komp.nr: ${k.komp}</p>
                 <p>Art.nr: ${k.art}</p>
                 <p>${m.text}</p>
