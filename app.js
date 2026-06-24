@@ -12,6 +12,7 @@ let komponenter = [];
 let scanning = false;
 let scanningBusy = false;
 let scanTimer = null;
+let väntarPåGodkännande = false;
 
 function normalisera(varde) {
     return String(varde || "")
@@ -94,7 +95,6 @@ function matchaMotLista(text) {
             const artPoäng = likhet(kandidat, k.art);
             const kompPoäng = likhet(kandidat, k.komp);
 
-            // Prioritera art.nr eftersom stansade nummer oftast är art.nr
             let viktadArtPoäng = artPoäng;
             if (artPoäng >= 85) viktadArtPoäng += 5;
 
@@ -148,6 +148,7 @@ excelFile.addEventListener("change", function () {
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         komponenter = [];
+        väntarPåGodkännande = false;
 
         for (let i = 1; i < rows.length; i++) {
             const rad = rows[i];
@@ -276,18 +277,26 @@ function skapaMatchHtml(matcher, text, bild) {
 }
 
 function ignoreraTraff() {
-    ocrStatus.innerHTML = "Träff ignorerad. Fortsätter scanna.";
+    väntarPåGodkännande = false;
+    ocrStatus.innerHTML = "Träff ignorerad. Tryck Starta smart scan för att fortsätta.";
+    scanInfo.innerHTML = "Scan: pausad";
 }
 
 function markeraOk(index) {
+    väntarPåGodkännande = false;
     komponenter[index].kontrollerad = true;
     komponenter[index].avvikelse = false;
+    ocrStatus.innerHTML = `Godkänd: ${komponenter[index].typ}`;
+    scanInfo.innerHTML = "Scan: pausad";
     visaLista();
 }
 
 function markeraAvvikelse(index) {
+    väntarPåGodkännande = false;
     komponenter[index].kontrollerad = true;
     komponenter[index].avvikelse = true;
+    ocrStatus.innerHTML = `Avvikelse markerad: ${komponenter[index].typ}`;
+    scanInfo.innerHTML = "Scan: pausad";
     visaLista();
 }
 
@@ -318,9 +327,15 @@ startScan.addEventListener("click", function () {
         return;
     }
 
+    väntarPåGodkännande = false;
     scanning = true;
+    scanningBusy = false;
     scanInfo.innerHTML = "Scan: aktiv";
     ocrStatus.innerHTML = "Smart scan startad.";
+
+    if (scanTimer) {
+        clearInterval(scanTimer);
+    }
 
     scanTimer = setInterval(körSmartScan, 2500);
 });
@@ -328,9 +343,28 @@ startScan.addEventListener("click", function () {
 stopScan.addEventListener("click", function () {
     scanning = false;
     scanningBusy = false;
-    clearInterval(scanTimer);
+    väntarPåGodkännande = false;
+
+    if (scanTimer) {
+        clearInterval(scanTimer);
+        scanTimer = null;
+    }
+
     scanInfo.innerHTML = "Scan: stoppad";
 });
+
+function stoppaScanVidTraff() {
+    väntarPåGodkännande = true;
+    scanning = false;
+    scanningBusy = false;
+
+    if (scanTimer) {
+        clearInterval(scanTimer);
+        scanTimer = null;
+    }
+
+    scanInfo.innerHTML = "Scan: pausad - träff hittad";
+}
 
 function beskärScanRuta() {
     const videoWidth = camera.videoWidth;
@@ -388,7 +422,7 @@ function roteraCanvas(sourceCanvas, grader) {
 }
 
 async function körSmartScan() {
-    if (!scanning || scanningBusy) return;
+    if (!scanning || scanningBusy || väntarPåGodkännande) return;
 
     scanningBusy = true;
 
@@ -401,6 +435,8 @@ async function körSmartScan() {
         let bästaBild = crop;
 
         for (const grad of rotationer) {
+            if (!scanning || väntarPåGodkännande) break;
+
             const bild = roteraCanvas(crop, grad);
 
             ocrStatus.innerHTML = `
@@ -418,25 +454,27 @@ async function körSmartScan() {
                 bästaText = text;
                 bästaBild = bild;
             }
+
+            if (bästaMatcher.length && bästaMatcher[0].poäng >= 90) {
+                break;
+            }
         }
 
         if (!bästaMatcher.length) {
-            ocrStatus.innerHTML = `
-                <div class="fel">
-                    <h3>Ingen träff ännu</h3>
-                    <p>Fortsätter scanna...</p>
-                    <img src="${bästaBild.toDataURL()}" style="max-width:100%;">
-                </div>
-            `;
-       } else {
-    scanning = false;
-    scanningBusy = false;
-    clearInterval(scanTimer);
-    scanInfo.innerHTML = "Scan: pausad - träff hittad";
-
-    ocrStatus.innerHTML = skapaMatchHtml(bästaMatcher, bästaText, bästaBild);
-    return;
-}
+            if (!väntarPåGodkännande) {
+                ocrStatus.innerHTML = `
+                    <div class="fel">
+                        <h3>Ingen träff ännu</h3>
+                        <p>Fortsätter scanna...</p>
+                        <img src="${bästaBild.toDataURL()}" style="max-width:100%;">
+                    </div>
+                `;
+            }
+        } else {
+            stoppaScanVidTraff();
+            ocrStatus.innerHTML = skapaMatchHtml(bästaMatcher, bästaText, bästaBild);
+            return;
+        }
 
     } catch (error) {
         ocrStatus.innerHTML = "Scan-fel: " + error.message;
