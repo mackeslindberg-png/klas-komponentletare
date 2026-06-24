@@ -19,24 +19,16 @@
     <hr>
 
     <button id="startCamera">Starta kamera</button>
-    <button id="readNumber">Läs nummer</button>
+    <button id="startScan">Starta smart scan</button>
+    <button id="stopScan">Stoppa scan</button>
 
-    <div class="rotation-card">
-        <label>Rotation: <span id="rotationValue">0</span>°</label>
-        <input type="range" id="rotationSlider" min="-180" max="180" value="0">
-        <div>
-            <button onclick="setRotation(0)">0°</button>
-            <button onclick="setRotation(90)">90°</button>
-            <button onclick="setRotation(180)">180°</button>
-            <button onclick="setRotation(-90)">-90°</button>
-        </div>
-    </div>
+    <p id="scanInfo">Scan: stoppad</p>
 
     <div class="camera-container">
         <video id="camera" autoplay playsinline></video>
 
         <div class="scan-box">
-            <div class="scan-text">RIKTA NUMRET HÄR</div>
+            <div class="scan-text">RIKTA NUMRET INOM RAMEN</div>
         </div>
     </div>
 
