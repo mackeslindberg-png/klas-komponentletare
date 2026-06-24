@@ -1,28 +1,19 @@
 const excelFile = document.getElementById("excelFile");
 const resultat = document.getElementById("resultat");
 const startCamera = document.getElementById("startCamera");
-const readNumber = document.getElementById("readNumber");
+const startScan = document.getElementById("startScan");
+const stopScan = document.getElementById("stopScan");
+const scanInfo = document.getElementById("scanInfo");
 const camera = document.getElementById("camera");
 const snapshot = document.getElementById("snapshot");
 const ocrStatus = document.getElementById("ocrStatus");
-const rotationSlider = document.getElementById("rotationSlider");
-const rotationValue = document.getElementById("rotationValue");
 
 let komponenter = [];
-let rotation = 0;
+let scanning = false;
+let scanningBusy = false;
+let scanTimer = null;
 
-rotationSlider.addEventListener("input", function () {
-    rotation = Number(rotationSlider.value);
-    rotationValue.textContent = rotation;
-});
-
-function setRotation(value) {
-    rotation = value;
-    rotationSlider.value = value;
-    rotationValue.textContent = value;
-}
-
-function normaliseraNummer(varde) {
+function normalisera(varde) {
     return String(varde || "")
         .toUpperCase()
         .replace(/[OQ]/g, "0")
@@ -32,100 +23,98 @@ function normaliseraNummer(varde) {
         .replace(/[^A-Z0-9]/g, "");
 }
 
+function likhet(a, b) {
+    a = normalisera(a);
+    b = normalisera(b);
+
+    if (!a || !b) return 0;
+    if (a === b) return 100;
+    if (a.includes(b) || b.includes(a)) return 92;
+
+    let kort = a.length <= b.length ? a : b;
+    let lang = a.length > b.length ? a : b;
+    let basta = 0;
+
+    for (let i = 0; i <= lang.length - kort.length; i++) {
+        let del = lang.slice(i, i + kort.length);
+        let lika = 0;
+
+        for (let j = 0; j < kort.length; j++) {
+            if (kort[j] === del[j]) lika++;
+        }
+
+        let score = Math.round((lika / kort.length) * 100);
+        if (score > basta) basta = score;
+    }
+
+    return basta;
+}
+
 function skapaKandidater(text) {
-    const ren = normaliseraNummer(text);
+    const ren = normalisera(text);
     const delar = ren.match(/[A-Z0-9]{4,}/g) || [];
     const kandidater = new Set();
 
     delar.forEach(d => {
         kandidater.add(d);
 
-        const baraSiffror = d.replace(/[^0-9]/g, "");
-        if (baraSiffror.length >= 4) kandidater.add(baraSiffror);
+        const siffror = d.replace(/[^0-9]/g, "");
+        if (siffror.length >= 4) kandidater.add(siffror);
 
-        if (d.length > 6) {
+        if (d.length >= 6) {
             kandidater.add(d.slice(-6));
             kandidater.add(d.slice(-7));
             kandidater.add(d.slice(-8));
+            kandidater.add(d.slice(-9));
+            kandidater.add(d.slice(-10));
         }
 
-        if (baraSiffror.length > 6) {
-            kandidater.add(baraSiffror.slice(-6));
-            kandidater.add(baraSiffror.slice(-7));
-            kandidater.add(baraSiffror.slice(-8));
+        if (siffror.length >= 6) {
+            kandidater.add(siffror.slice(-6));
+            kandidater.add(siffror.slice(-7));
+            kandidater.add(siffror.slice(-8));
+            kandidater.add(siffror.slice(-9));
+            kandidater.add(siffror.slice(-10));
         }
     });
 
     return Array.from(kandidater).filter(k => k.length >= 4);
 }
 
-function likhet(a, b) {
-    a = normaliseraNummer(a);
-    b = normaliseraNummer(b);
+function matchaMotLista(text) {
+    const kandidater = skapaKandidater(text);
+    let matcher = [];
 
-    if (!a || !b) return 0;
-    if (a === b) return 100;
-    if (a.includes(b) || b.includes(a)) return 85;
+    komponenter.forEach(k => {
+        let bästaPoäng = 0;
+        let bästaText = "";
 
-    let kort = a.length <= b.length ? a : b;
-    let lang = a.length > b.length ? a : b;
+        kandidater.forEach(kandidat => {
+            const kompPoäng = likhet(kandidat, k.komp);
+            const artPoäng = likhet(kandidat, k.art);
 
-    let basta = 0;
+            if (kompPoäng > bästaPoäng) {
+                bästaPoäng = kompPoäng;
+                bästaText = `Kandidat ${kandidat} liknar komp.nr ${k.komp}`;
+            }
 
-    for (let i = 0; i <= lang.length - kort.length; i++) {
-        let del = lang.slice(i, i + kort.length);
-        let samma = 0;
+            if (artPoäng > bästaPoäng) {
+                bästaPoäng = artPoäng;
+                bästaText = `Kandidat ${kandidat} liknar art.nr ${k.art}`;
+            }
+        });
 
-        for (let j = 0; j < kort.length; j++) {
-            if (kort[j] === del[j]) samma++;
-        }
-
-        let procent = Math.round((samma / kort.length) * 100);
-        if (procent > basta) basta = procent;
-    }
-
-    return basta;
-}
-
-function poangForKomponent(ocrText, komponent) {
-    const kandidater = skapaKandidater(ocrText);
-    const komp = normaliseraNummer(komponent.komp);
-    const art = normaliseraNummer(komponent.art);
-
-    let poang = 0;
-    let detaljer = [];
-
-    kandidater.forEach(k => {
-        const kompLikhet = likhet(k, komp);
-        const artLikhet = likhet(k, art);
-
-        if (kompLikhet > poang) {
-            poang = kompLikhet;
-            detaljer = [`Kandidat ${k} liknar komp.nr ${komponent.komp} (${kompLikhet}%)`];
-        }
-
-        if (artLikhet > poang) {
-            poang = artLikhet;
-            detaljer = [`Kandidat ${k} liknar art.nr ${komponent.art} (${artLikhet}%)`];
+        if (bästaPoäng >= 60) {
+            matcher.push({
+                komponent: k,
+                poäng: bästaPoäng,
+                text: bästaText
+            });
         }
     });
 
-    return { poang, detaljer, kandidater };
-}
-
-function hittaToppMatcher(ocrText) {
-    return komponenter
-        .map(k => {
-            const match = poangForKomponent(ocrText, k);
-            return {
-                komponent: k,
-                poang: match.poang,
-                detaljer: match.detaljer,
-                kandidater: match.kandidater
-            };
-        })
-        .filter(m => m.poang >= 60)
-        .sort((a, b) => b.poang - a.poang)
+    return matcher
+        .sort((a, b) => b.poäng - a.poäng)
         .slice(0, 3);
 }
 
@@ -172,14 +161,14 @@ function visaLista() {
     const avvikelser = komponenter.filter(k => k.avvikelse).length;
 
     let html = "<h3>Excel inläst</h3>";
-    html += "<p>Antal komponenter: " + komponenter.length + "</p>";
-    html += "<p>Kontrollerade: " + kontrollerade + " / " + komponenter.length + "</p>";
-    html += "<p>Avvikelser: " + avvikelser + "</p>";
+    html += `<p>Antal komponenter: ${komponenter.length}</p>`;
+    html += `<p>Kontrollerade: ${kontrollerade} / ${komponenter.length}</p>`;
+    html += `<p>Avvikelser: ${avvikelser}</p>`;
 
     html += `
-        <label>Sök komponentnummer eller artikelnummer:</label><br>
-        <input type="text" id="sokRuta" placeholder="Ex: 55194809 eller 2616 0705 PG">
-        <button onclick="sokKomponent()">Sök</button>
+        <label>Sök manuellt:</label><br>
+        <input type="text" id="sokRuta" placeholder="Ex: 03H350105">
+        <button onclick="sokManuellt()">Sök</button>
         <div id="sokResultat"></div>
         <hr>
     `;
@@ -188,7 +177,6 @@ function visaLista() {
 
     komponenter.forEach(k => {
         let klass = "";
-
         if (k.avvikelse) klass = "avvikelse";
         else if (k.kontrollerad) klass = "ok";
 
@@ -205,42 +193,27 @@ function visaLista() {
     resultat.innerHTML = html;
 }
 
-function sokKomponent() {
-    const sok = document.getElementById("sokRuta").value;
-    const sokResultat = document.getElementById("sokResultat");
+function sokManuellt() {
+    const text = document.getElementById("sokRuta").value;
+    const matcher = matchaMotLista(text);
+    document.getElementById("sokResultat").innerHTML = skapaMatchHtml(matcher, text, null);
+}
 
-    const matcher = hittaToppMatcher(sok);
-
-    if (matcher.length === 0) {
-        sokResultat.innerHTML = "<p><strong>Ingen träff.</strong></p>";
-        return;
+function skapaMatchHtml(matcher, text, bild) {
+    if (!matcher.length) {
+        return `
+            <div class="fel">
+                <h3>Ingen träff</h3>
+                <p>Läst text:</p>
+                <pre>${text}</pre>
+            </div>
+        `;
     }
 
-    sokResultat.innerHTML = skapaMatchHtml(matcher, sok, null);
-}
-
-function markeraOk(index) {
-    const k = komponenter[index];
-    k.kontrollerad = true;
-    k.avvikelse = false;
-    visaLista();
-}
-
-function markeraAvvikelse(index) {
-    const k = komponenter[index];
-    k.kontrollerad = true;
-    k.avvikelse = true;
-    visaLista();
-}
-
-function skapaMatchHtml(matcher, ocrText, usedCanvas) {
     let html = "";
 
-    if (usedCanvas) {
-        html += `
-            <p><strong>OCR-beskärning:</strong></p>
-            <img src="${usedCanvas.toDataURL()}" style="max-width:100%;">
-        `;
+    if (bild) {
+        html += `<img src="${bild.toDataURL()}" style="max-width:100%;">`;
     }
 
     html += "<h3>Möjliga träffar</h3>";
@@ -252,22 +225,30 @@ function skapaMatchHtml(matcher, ocrText, usedCanvas) {
         html += `
             <div class="match">
                 <h3>${i + 1}. ${k.typ}</h3>
-                <p>Säkerhet: ${m.poang}%</p>
+                <p>Säkerhet: ${m.poäng}%</p>
                 <p>Komp.nr: ${k.komp}</p>
                 <p>Art.nr: ${k.art}</p>
-                <p>${m.detaljer.join(", ")}</p>
+                <p>${m.text}</p>
                 <button onclick="markeraOk(${index})">Markera OK</button>
                 <button onclick="markeraAvvikelse(${index})">Markera avvikelse</button>
             </div>
         `;
     });
 
-    html += `
-        <p><strong>OCR/text läste:</strong></p>
-        <pre>${ocrText}</pre>
-    `;
-
+    html += `<pre>${text}</pre>`;
     return html;
+}
+
+function markeraOk(index) {
+    komponenter[index].kontrollerad = true;
+    komponenter[index].avvikelse = false;
+    visaLista();
+}
+
+function markeraAvvikelse(index) {
+    komponenter[index].kontrollerad = true;
+    komponenter[index].avvikelse = true;
+    visaLista();
 }
 
 startCamera.addEventListener("click", async function () {
@@ -286,6 +267,66 @@ startCamera.addEventListener("click", async function () {
     }
 });
 
+startScan.addEventListener("click", function () {
+    if (!camera.srcObject) {
+        alert("Starta kameran först.");
+        return;
+    }
+
+    if (!komponenter.length) {
+        alert("Läs in Excel-filen först.");
+        return;
+    }
+
+    scanning = true;
+    scanInfo.innerHTML = "Scan: aktiv";
+    ocrStatus.innerHTML = "Smart scan startad.";
+
+    scanTimer = setInterval(körSmartScan, 2500);
+});
+
+stopScan.addEventListener("click", function () {
+    scanning = false;
+    scanningBusy = false;
+    clearInterval(scanTimer);
+    scanInfo.innerHTML = "Scan: stoppad";
+});
+
+function beskärScanRuta() {
+    const videoWidth = camera.videoWidth;
+    const videoHeight = camera.videoHeight;
+
+    snapshot.width = videoWidth;
+    snapshot.height = videoHeight;
+
+    const ctx = snapshot.getContext("2d");
+    ctx.drawImage(camera, 0, 0, videoWidth, videoHeight);
+
+    const cropX = videoWidth * 0.10;
+    const cropY = videoHeight * 0.20;
+    const cropWidth = videoWidth * 0.80;
+    const cropHeight = videoHeight * 0.60;
+
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = cropWidth;
+    cropCanvas.height = cropHeight;
+
+    const cropCtx = cropCanvas.getContext("2d");
+    cropCtx.drawImage(
+        snapshot,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        0,
+        0,
+        cropWidth,
+        cropHeight
+    );
+
+    return cropCanvas;
+}
+
 function roteraCanvas(sourceCanvas, grader) {
     const radians = grader * Math.PI / 180;
     const sin = Math.abs(Math.sin(radians));
@@ -294,104 +335,91 @@ function roteraCanvas(sourceCanvas, grader) {
     const width = sourceCanvas.width;
     const height = sourceCanvas.height;
 
-    const rotatedCanvas = document.createElement("canvas");
-    rotatedCanvas.width = Math.floor(width * cos + height * sin);
-    rotatedCanvas.height = Math.floor(width * sin + height * cos);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(width * cos + height * sin);
+    canvas.height = Math.floor(width * sin + height * cos);
 
-    const ctx = rotatedCanvas.getContext("2d");
-    ctx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+    const ctx = canvas.getContext("2d");
+    ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate(radians);
     ctx.drawImage(sourceCanvas, -width / 2, -height / 2);
 
-    return rotatedCanvas;
+    return canvas;
 }
 
-readNumber.addEventListener("click", async function () {
-    if (!camera.srcObject) {
-        ocrStatus.innerHTML = "Starta kameran först.";
-        return;
-    }
+async function körSmartScan() {
+    if (!scanning || scanningBusy) return;
 
-    if (komponenter.length === 0) {
-        ocrStatus.innerHTML = "Läs in Excel-filen först.";
-        return;
-    }
+    scanningBusy = true;
 
     try {
-        ocrStatus.innerHTML = "Tar bild från scan-rutan...";
+        const crop = beskärScanRuta();
+        const rotationer = [0, 90, 180, 270];
 
-        const videoWidth = camera.videoWidth;
-        const videoHeight = camera.videoHeight;
+        let bästaMatcher = [];
+        let bästaText = "";
+        let bästaBild = crop;
 
-        snapshot.width = videoWidth;
-        snapshot.height = videoHeight;
+        for (const grad of rotationer) {
+            const bild = roteraCanvas(crop, grad);
 
-        const ctx = snapshot.getContext("2d");
-        ctx.drawImage(camera, 0, 0, videoWidth, videoHeight);
-
-        const cropX = videoWidth * 0.15;
-        const cropY = videoHeight * 0.38;
-        const cropWidth = videoWidth * 0.70;
-        const cropHeight = videoHeight * 0.24;
-
-        const cropCanvas = document.createElement("canvas");
-        cropCanvas.width = cropWidth;
-        cropCanvas.height = cropHeight;
-
-        const cropCtx = cropCanvas.getContext("2d");
-        cropCtx.drawImage(
-            snapshot,
-            cropX,
-            cropY,
-            cropWidth,
-            cropHeight,
-            0,
-            0,
-            cropWidth,
-            cropHeight
-        );
-
-        const rotatedCanvas = roteraCanvas(cropCanvas, rotation);
-
-        ocrStatus.innerHTML = `
-            <h3>OCR-beskärning</h3>
-            <p>Rotation: ${rotation}°</p>
-            <img src="${rotatedCanvas.toDataURL()}" style="max-width:100%;">
-            <p>Läser text...</p>
-        `;
-
-        const result = await Tesseract.recognize(rotatedCanvas, "eng", {
-            logger: function (m) {
-                if (m.status) {
-                    ocrStatus.innerHTML = `
-                        <h3>OCR-beskärning</h3>
-                        <p>Rotation: ${rotation}°</p>
-                        <img src="${rotatedCanvas.toDataURL()}" style="max-width:100%;">
-                        <p>OCR: ${m.status} ${m.progress ? Math.round(m.progress * 100) + "%" : ""}</p>
-                    `;
-                }
-            }
-        });
-
-        const text = result.data.text || "";
-        const matcher = hittaToppMatcher(text);
-
-        if (matcher.length === 0) {
             ocrStatus.innerHTML = `
-                <div class="fel">
-                    <h3>Ingen träff</h3>
-                    <p><strong>OCR-beskärning:</strong></p>
-                    <img src="${rotatedCanvas.toDataURL()}" style="max-width:100%;">
-                    <p>OCR läste:</p>
-                    <pre>${text}</pre>
-                </div>
+                <p>Smart scan körs...</p>
+                <p>Testar rotation: ${grad}°</p>
+                <img src="${bild.toDataURL()}" style="max-width:100%;">
             `;
-            return;
+
+            const result = await Tesseract.recognize(bild, "eng");
+            const text = result.data.text || "";
+            const matcher = matchaMotLista(text);
+
+            if (matcher.length && (!bästaMatcher.length || matcher[0].poäng > bästaMatcher[0].poäng)) {
+                bästaMatcher = matcher;
+                bästaText = text;
+                bästaBild = bild;
+            }
+
+            if (bästaMatcher.length && bästaMatcher[0].poäng >= 90) {
+                break;
+            }
         }
 
-        ocrStatus.innerHTML = skapaMatchHtml(matcher, text, rotatedCanvas);
+        if (!bästaMatcher.length) {
+            ocrStatus.innerHTML = `
+                <div class="fel">
+                    <h3>Ingen träff ännu</h3>
+                    <p>Fortsätter scanna...</p>
+                    <img src="${bästaBild.toDataURL()}" style="max-width:100%;">
+                </div>
+            `;
+        } else {
+            const bästa = bästaMatcher[0];
+            const k = bästa.komponent;
+
+            if (bästa.poäng >= 90) {
+                k.kontrollerad = true;
+                k.avvikelse = false;
+                visaLista();
+
+                ocrStatus.innerHTML = `
+                    <div class="match">
+                        <h3>✅ AUTO OK</h3>
+                        <p><strong>${k.typ}</strong></p>
+                        <p>Säkerhet: ${bästa.poäng}%</p>
+                        <p>Komp.nr: ${k.komp}</p>
+                        <p>Art.nr: ${k.art}</p>
+                        <p>${bästa.text}</p>
+                        <img src="${bästaBild.toDataURL()}" style="max-width:100%;">
+                    </div>
+                `;
+            } else {
+                ocrStatus.innerHTML = skapaMatchHtml(bästaMatcher, bästaText, bästaBild);
+            }
+        }
 
     } catch (error) {
-        ocrStatus.innerHTML = "OCR-fel: " + error.message;
+        ocrStatus.innerHTML = "Scan-fel: " + error.message;
     }
-});
+
+    scanningBusy = false;
+}
