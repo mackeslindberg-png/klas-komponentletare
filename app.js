@@ -21,6 +21,8 @@ function normalisera(varde) {
         .replace(/[IL]/g, "1")
         .replace(/S/g, "5")
         .replace(/B/g, "8")
+        .replace(/Z/g, "2")
+        .replace(/G/g, "6")
         .replace(/[^A-Z0-9]/g, "");
 }
 
@@ -28,44 +30,72 @@ function baraSiffror(varde) {
     return normalisera(varde).replace(/[^0-9]/g, "");
 }
 
-function likhet(a, b) {
-    a = normalisera(a);
-    b = normalisera(b);
+function levenshtein(a, b) {
+    a = String(a || "");
+    b = String(b || "");
 
-    if (!a || !b) return 0;
-    if (a === b) return 100;
-    if (a.includes(b) || b.includes(a)) return 95;
+    const dp = Array.from({ length: a.length + 1 }, () =>
+        Array(b.length + 1).fill(0)
+    );
 
-    let kort = a.length <= b.length ? a : b;
-    let lang = a.length > b.length ? a : b;
-    let basta = 0;
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
 
-    for (let i = 0; i <= lang.length - kort.length; i++) {
-        let del = lang.slice(i, i + kort.length);
-        let lika = 0;
-
-        for (let j = 0; j < kort.length; j++) {
-            if (kort[j] === del[j]) lika++;
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+            const kostnad = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + kostnad
+            );
         }
-
-        let score = Math.round((lika / kort.length) * 100);
-        if (score > basta) basta = score;
     }
 
-    return basta;
+    return dp[a.length][b.length];
+}
+
+function likhetStrikt(kandidat, target) {
+    kandidat = baraSiffror(kandidat);
+    target = baraSiffror(target);
+
+    if (!kandidat || !target) return 0;
+
+    // Minst 6 tecken, annars ska den inte kunna bli en träff.
+    if (kandidat.length < 6 || target.length < 6) return 0;
+
+    if (kandidat === target) return 100;
+
+    // Om OCR fått med extra tecken före/efter.
+    if (kandidat.includes(target) || target.includes(kandidat)) {
+        const kortaste = Math.min(kandidat.length, target.length);
+        if (kortaste >= 7) return 96;
+    }
+
+    // Jämför bara om längderna är rimligt nära.
+    const längdSkillnad = Math.abs(kandidat.length - target.length);
+    if (längdSkillnad > 2) return 0;
+
+    const dist = levenshtein(kandidat, target);
+    const maxLen = Math.max(kandidat.length, target.length);
+    const score = Math.round((1 - dist / maxLen) * 100);
+
+    return score;
 }
 
 function skapaKandidater(text) {
     const ren = normalisera(text);
-    const delar = ren.match(/[A-Z0-9]{4,}/g) || [];
+    const delar = ren.match(/[A-Z0-9]{6,}/g) || [];
     const kandidater = new Set();
 
     delar.forEach(d => {
-        kandidater.add(d);
-
         const siffror = d.replace(/[^0-9]/g, "");
-        if (siffror.length >= 4) kandidater.add(siffror);
 
+        // Hela OCR-raden
+        if (d.length >= 6) kandidater.add(d);
+        if (siffror.length >= 6) kandidater.add(siffror);
+
+        // Sista 6-12 tecknen, bra för t.ex. P17507546#T26224368PG
         for (let len = 6; len <= 12; len++) {
             if (d.length >= len) kandidater.add(d.slice(-len));
             if (siffror.length >= len) kandidater.add(siffror.slice(-len));
@@ -73,29 +103,26 @@ function skapaKandidater(text) {
     });
 
     return Array.from(kandidater)
-        .filter(k => k.length >= 4)
-        .sort((a, b) => b.length - a.length);
+        .filter(k => baraSiffror(k).length >= 6)
+        .sort((a, b) => baraSiffror(b).length - baraSiffror(a).length);
 }
 
 function matchaMotLista(text) {
     const kandidater = skapaKandidater(text);
     let artMatcher = [];
 
-    // STEG 1: ART.NR FÖRST
+    // 1. ART.NR FÖRST
     komponenter.forEach(k => {
         const art = baraSiffror(k.art);
+        if (!art || art.length < 6) return;
 
         kandidater.forEach(kandidat => {
             const kandidatSiffror = baraSiffror(kandidat);
-            if (!art || !kandidatSiffror) return;
+            if (kandidatSiffror.length < 6) return;
 
-            let poäng = likhet(kandidatSiffror, art);
+            const poäng = likhetStrikt(kandidatSiffror, art);
 
-            if (kandidatSiffror === art) poäng = 100;
-            if (kandidatSiffror.endsWith(art)) poäng = Math.max(poäng, 98);
-            if (art.endsWith(kandidatSiffror) && kandidatSiffror.length >= 6) poäng = Math.max(poäng, 95);
-
-            if (poäng >= 60) {
+            if (poäng >= 80) {
                 artMatcher.push({
                     komponent: k,
                     poäng,
@@ -114,23 +141,20 @@ function matchaMotLista(text) {
         return artMatcher;
     }
 
-    // STEG 2: KOMP.NR BARA OM INGET ART.NR HITTAS
+    // 2. KOMP.NR ENDAST OM INGET ART.NR HITTAS
     let kompMatcher = [];
 
     komponenter.forEach(k => {
         const komp = baraSiffror(k.komp);
+        if (!komp || komp.length < 6) return;
 
         kandidater.forEach(kandidat => {
             const kandidatSiffror = baraSiffror(kandidat);
-            if (!komp || !kandidatSiffror) return;
+            if (kandidatSiffror.length < 6) return;
 
-            let poäng = likhet(kandidatSiffror, komp);
+            const poäng = likhetStrikt(kandidatSiffror, komp);
 
-            if (kandidatSiffror === komp) poäng = 100;
-            if (kandidatSiffror.endsWith(komp)) poäng = Math.max(poäng, 95);
-            if (komp.endsWith(kandidatSiffror) && kandidatSiffror.length >= 6) poäng = Math.max(poäng, 90);
-
-            if (poäng >= 60) {
+            if (poäng >= 85) {
                 kompMatcher.push({
                     komponent: k,
                     poäng,
@@ -348,9 +372,7 @@ startScan.addEventListener("click", function () {
     scanInfo.innerHTML = "Scan: aktiv";
     ocrStatus.innerHTML = "Smart scan startad.";
 
-    if (scanTimer) {
-        clearInterval(scanTimer);
-    }
+    if (scanTimer) clearInterval(scanTimer);
 
     scanTimer = setInterval(körSmartScan, 2500);
 });
@@ -401,17 +423,7 @@ function beskärScanRuta() {
     cropCanvas.height = cropHeight;
 
     const cropCtx = cropCanvas.getContext("2d");
-    cropCtx.drawImage(
-        snapshot,
-        cropX,
-        cropY,
-        cropWidth,
-        cropHeight,
-        0,
-        0,
-        cropWidth,
-        cropHeight
-    );
+    cropCtx.drawImage(snapshot, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
 
     return cropCanvas;
 }
@@ -470,9 +482,7 @@ async function körSmartScan() {
                 bästaBild = bild;
             }
 
-            if (bästaMatcher.length && bästaMatcher[0].poäng >= 90) {
-                break;
-            }
+            if (bästaMatcher.length && bästaMatcher[0].poäng >= 90) break;
         }
 
         if (!bästaMatcher.length) {
