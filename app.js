@@ -24,13 +24,17 @@ function normalisera(varde) {
         .replace(/[^A-Z0-9]/g, "");
 }
 
+function baraSiffror(varde) {
+    return normalisera(varde).replace(/[^0-9]/g, "");
+}
+
 function likhet(a, b) {
     a = normalisera(a);
     b = normalisera(b);
 
     if (!a || !b) return 0;
     if (a === b) return 100;
-    if (a.includes(b) || b.includes(a)) return 92;
+    if (a.includes(b) || b.includes(a)) return 95;
 
     let kort = a.length <= b.length ? a : b;
     let lang = a.length > b.length ? a : b;
@@ -62,24 +66,15 @@ function skapaKandidater(text) {
         const siffror = d.replace(/[^0-9]/g, "");
         if (siffror.length >= 4) kandidater.add(siffror);
 
-        if (d.length >= 6) {
-            kandidater.add(d.slice(-6));
-            kandidater.add(d.slice(-7));
-            kandidater.add(d.slice(-8));
-            kandidater.add(d.slice(-9));
-            kandidater.add(d.slice(-10));
-        }
-
-        if (siffror.length >= 6) {
-            kandidater.add(siffror.slice(-6));
-            kandidater.add(siffror.slice(-7));
-            kandidater.add(siffror.slice(-8));
-            kandidater.add(siffror.slice(-9));
-            kandidater.add(siffror.slice(-10));
+        for (let len = 6; len <= 12; len++) {
+            if (d.length >= len) kandidater.add(d.slice(-len));
+            if (siffror.length >= len) kandidater.add(siffror.slice(-len));
         }
     });
 
-    return Array.from(kandidater).filter(k => k.length >= 4);
+    return Array.from(kandidater)
+        .filter(k => k.length >= 4)
+        .sort((a, b) => b.length - a.length);
 }
 
 function matchaMotLista(text) {
@@ -91,23 +86,74 @@ function matchaMotLista(text) {
         let bästaText = "";
         let matchTyp = "";
 
+        const artNorm = normalisera(k.art);
+        const kompNorm = normalisera(k.komp);
+        const artSiffror = baraSiffror(k.art);
+        const kompSiffror = baraSiffror(k.komp);
+
         kandidater.forEach(kandidat => {
+            const kandidatNorm = normalisera(kandidat);
+            const kandidatSiffror = baraSiffror(kandidat);
+
+            // 1. Stansade nummer: prioritera art.nr stenhårt
+            if (artNorm && kandidatNorm === artNorm) {
+                bästaPoäng = 100;
+                bästaText = `Exakt träff på art.nr ${k.art}`;
+                matchTyp = "art";
+            }
+
+            if (artSiffror && kandidatSiffror && kandidatSiffror === artSiffror) {
+                if (100 > bästaPoäng) {
+                    bästaPoäng = 100;
+                    bästaText = `Exakt sifferträff på art.nr ${k.art}`;
+                    matchTyp = "art";
+                }
+            }
+
+            if (artSiffror.length >= 6 && kandidatSiffror.includes(artSiffror)) {
+                if (98 > bästaPoäng) {
+                    bästaPoäng = 98;
+                    bästaText = `Kandidat ${kandidat} innehåller art.nr ${k.art}`;
+                    matchTyp = "art";
+                }
+            }
+
+            if (artSiffror.length >= 6 && artSiffror.includes(kandidatSiffror)) {
+                if (kandidatSiffror.length >= 7 && 92 > bästaPoäng) {
+                    bästaPoäng = 92;
+                    bästaText = `Kandidat ${kandidat} är del av art.nr ${k.art}`;
+                    matchTyp = "art";
+                }
+            }
+
+            // 2. Vanlig fuzzy mot art.nr
             const artPoäng = likhet(kandidat, k.art);
-            const kompPoäng = likhet(kandidat, k.komp);
-
-            let viktadArtPoäng = artPoäng;
-            if (artPoäng >= 85) viktadArtPoäng += 5;
-
-            if (viktadArtPoäng > bästaPoäng) {
-                bästaPoäng = Math.min(viktadArtPoäng, 100);
+            if (artPoäng >= 85 && artPoäng + 5 > bästaPoäng) {
+                bästaPoäng = Math.min(artPoäng + 5, 99);
                 bästaText = `Kandidat ${kandidat} liknar art.nr ${k.art}`;
                 matchTyp = "art";
             }
 
-            if (kompPoäng > bästaPoäng && artPoäng < 85) {
-                bästaPoäng = kompPoäng;
-                bästaText = `Kandidat ${kandidat} liknar komp.nr ${k.komp}`;
-                matchTyp = "komp";
+            // 3. Komp.nr bara om art.nr inte redan är starkt
+            const kompPoäng = likhet(kandidat, k.komp);
+            if (bästaPoäng < 90) {
+                if (kompNorm && kandidatNorm === kompNorm && 95 > bästaPoäng) {
+                    bästaPoäng = 95;
+                    bästaText = `Exakt träff på komp.nr ${k.komp}`;
+                    matchTyp = "komp";
+                }
+
+                if (kompSiffror && kandidatSiffror && kandidatSiffror === kompSiffror && 95 > bästaPoäng) {
+                    bästaPoäng = 95;
+                    bästaText = `Exakt sifferträff på komp.nr ${k.komp}`;
+                    matchTyp = "komp";
+                }
+
+                if (kompPoäng > bästaPoäng) {
+                    bästaPoäng = kompPoäng;
+                    bästaText = `Kandidat ${kandidat} liknar komp.nr ${k.komp}`;
+                    matchTyp = "komp";
+                }
             }
         });
 
@@ -181,7 +227,7 @@ function visaLista() {
 
     html += `
         <label>Sök manuellt:</label><br>
-        <input type="text" id="sokRuta" placeholder="Ex: 0326062809">
+        <input type="text" id="sokRuta" placeholder="Ex: 0326062014">
         <button onclick="sokManuellt()">Sök</button>
         <div id="sokResultat"></div>
         <hr>
