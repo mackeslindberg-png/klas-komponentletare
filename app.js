@@ -75,32 +75,67 @@ function skapaKandidater(text) {
     return Array.from(kandidater)
         .filter(k => k.length >= 4)
         .sort((a, b) => b.length - a.length);
-}
-
 function matchaMotLista(text) {
     const kandidater = skapaKandidater(text);
-    let matcher = [];
+    let artMatcher = [];
+    let kompMatcher = [];
 
     komponenter.forEach(k => {
-        let bästaPoäng = 0;
-        let bästaText = "";
-        let matchTyp = "";
-
-        const artNorm = normalisera(k.art);
-        const kompNorm = normalisera(k.komp);
-        const artSiffror = baraSiffror(k.art);
-        const kompSiffror = baraSiffror(k.komp);
+        const art = baraSiffror(k.art);
+        const komp = baraSiffror(k.komp);
 
         kandidater.forEach(kandidat => {
-            const kandidatNorm = normalisera(kandidat);
             const kandidatSiffror = baraSiffror(kandidat);
 
-            // 1. Stansade nummer: prioritera art.nr stenhårt
-            if (artNorm && kandidatNorm === artNorm) {
-                bästaPoäng = 100;
-                bästaText = `Exakt träff på art.nr ${k.art}`;
-                matchTyp = "art";
+            if (!kandidatSiffror) return;
+
+            // 1. ART.NR FÖRST
+            if (art && art.length >= 4) {
+                let poäng = likhet(kandidatSiffror, art);
+
+                // Tillåt att OCR missar eller lägger till inledande nolla
+                if (kandidatSiffror.endsWith(art) || art.endsWith(kandidatSiffror)) {
+                    poäng = Math.max(poäng, 98);
+                }
+
+                if (poäng >= 60) {
+                    artMatcher.push({
+                        komponent: k,
+                        poäng: poäng,
+                        text: `Kandidat ${kandidatSiffror} matchar art.nr ${k.art}`,
+                        matchTyp: "art"
+                    });
+                }
             }
+
+            // 2. KOMP.NR BARA SOM RESERV
+            if (komp && komp.length >= 4) {
+                let poäng = likhet(kandidatSiffror, komp);
+
+                if (poäng >= 60) {
+                    kompMatcher.push({
+                        komponent: k,
+                        poäng: poäng,
+                        text: `Kandidat ${kandidatSiffror} matchar komp.nr ${k.komp}`,
+                        matchTyp: "komp"
+                    });
+                }
+            }
+        });
+    });
+
+    const bästaArt = artMatcher
+        .sort((a, b) => b.poäng - a.poäng)
+        .slice(0, 3);
+
+    if (bästaArt.length > 0) {
+        return bästaArt;
+    }
+
+    return kompMatcher
+        .sort((a, b) => b.poäng - a.poäng)
+        .slice(0, 3);
+}
 
             if (artSiffror && kandidatSiffror && kandidatSiffror === artSiffror) {
                 if (100 > bästaPoäng) {
