@@ -75,140 +75,74 @@ function skapaKandidater(text) {
     return Array.from(kandidater)
         .filter(k => k.length >= 4)
         .sort((a, b) => b.length - a.length);
+}
+
 function matchaMotLista(text) {
     const kandidater = skapaKandidater(text);
     let artMatcher = [];
+
+    // STEG 1: ART.NR FÖRST
+    komponenter.forEach(k => {
+        const art = baraSiffror(k.art);
+
+        kandidater.forEach(kandidat => {
+            const kandidatSiffror = baraSiffror(kandidat);
+            if (!art || !kandidatSiffror) return;
+
+            let poäng = likhet(kandidatSiffror, art);
+
+            if (kandidatSiffror === art) poäng = 100;
+            if (kandidatSiffror.endsWith(art)) poäng = Math.max(poäng, 98);
+            if (art.endsWith(kandidatSiffror) && kandidatSiffror.length >= 6) poäng = Math.max(poäng, 95);
+
+            if (poäng >= 60) {
+                artMatcher.push({
+                    komponent: k,
+                    poäng,
+                    text: `Kandidat ${kandidatSiffror} matchar ART.NR ${k.art}`,
+                    matchTyp: "art"
+                });
+            }
+        });
+    });
+
+    artMatcher = artMatcher
+        .sort((a, b) => b.poäng - a.poäng)
+        .slice(0, 3);
+
+    if (artMatcher.length > 0) {
+        return artMatcher;
+    }
+
+    // STEG 2: KOMP.NR BARA OM INGET ART.NR HITTAS
     let kompMatcher = [];
 
     komponenter.forEach(k => {
-        const art = baraSiffror(k.art);
         const komp = baraSiffror(k.komp);
 
         kandidater.forEach(kandidat => {
             const kandidatSiffror = baraSiffror(kandidat);
+            if (!komp || !kandidatSiffror) return;
 
-            if (!kandidatSiffror) return;
+            let poäng = likhet(kandidatSiffror, komp);
 
-            // 1. ART.NR FÖRST
-            if (art && art.length >= 4) {
-                let poäng = likhet(kandidatSiffror, art);
+            if (kandidatSiffror === komp) poäng = 100;
+            if (kandidatSiffror.endsWith(komp)) poäng = Math.max(poäng, 95);
+            if (komp.endsWith(kandidatSiffror) && kandidatSiffror.length >= 6) poäng = Math.max(poäng, 90);
 
-                // Tillåt att OCR missar eller lägger till inledande nolla
-                if (kandidatSiffror.endsWith(art) || art.endsWith(kandidatSiffror)) {
-                    poäng = Math.max(poäng, 98);
-                }
-
-                if (poäng >= 60) {
-                    artMatcher.push({
-                        komponent: k,
-                        poäng: poäng,
-                        text: `Kandidat ${kandidatSiffror} matchar art.nr ${k.art}`,
-                        matchTyp: "art"
-                    });
-                }
-            }
-
-            // 2. KOMP.NR BARA SOM RESERV
-            if (komp && komp.length >= 4) {
-                let poäng = likhet(kandidatSiffror, komp);
-
-                if (poäng >= 60) {
-                    kompMatcher.push({
-                        komponent: k,
-                        poäng: poäng,
-                        text: `Kandidat ${kandidatSiffror} matchar komp.nr ${k.komp}`,
-                        matchTyp: "komp"
-                    });
-                }
+            if (poäng >= 60) {
+                kompMatcher.push({
+                    komponent: k,
+                    poäng,
+                    text: `Kandidat ${kandidatSiffror} matchar komp.nr ${k.komp}`,
+                    matchTyp: "komp"
+                });
             }
         });
     });
-
-    const bästaArt = artMatcher
-        .sort((a, b) => b.poäng - a.poäng)
-        .slice(0, 3);
-
-    if (bästaArt.length > 0) {
-        return bästaArt;
-    }
 
     return kompMatcher
         .sort((a, b) => b.poäng - a.poäng)
-        .slice(0, 3);
-}
-
-            if (artSiffror && kandidatSiffror && kandidatSiffror === artSiffror) {
-                if (100 > bästaPoäng) {
-                    bästaPoäng = 100;
-                    bästaText = `Exakt sifferträff på art.nr ${k.art}`;
-                    matchTyp = "art";
-                }
-            }
-
-            if (artSiffror.length >= 6 && kandidatSiffror.includes(artSiffror)) {
-                if (98 > bästaPoäng) {
-                    bästaPoäng = 98;
-                    bästaText = `Kandidat ${kandidat} innehåller art.nr ${k.art}`;
-                    matchTyp = "art";
-                }
-            }
-
-            if (artSiffror.length >= 6 && artSiffror.includes(kandidatSiffror)) {
-                if (kandidatSiffror.length >= 7 && 92 > bästaPoäng) {
-                    bästaPoäng = 92;
-                    bästaText = `Kandidat ${kandidat} är del av art.nr ${k.art}`;
-                    matchTyp = "art";
-                }
-            }
-
-            // 2. Vanlig fuzzy mot art.nr
-            const artPoäng = likhet(kandidat, k.art);
-            if (artPoäng >= 85 && artPoäng + 5 > bästaPoäng) {
-                bästaPoäng = Math.min(artPoäng + 5, 99);
-                bästaText = `Kandidat ${kandidat} liknar art.nr ${k.art}`;
-                matchTyp = "art";
-            }
-
-            // 3. Komp.nr bara om art.nr inte redan är starkt
-            const kompPoäng = likhet(kandidat, k.komp);
-            if (bästaPoäng < 90) {
-                if (kompNorm && kandidatNorm === kompNorm && 95 > bästaPoäng) {
-                    bästaPoäng = 95;
-                    bästaText = `Exakt träff på komp.nr ${k.komp}`;
-                    matchTyp = "komp";
-                }
-
-                if (kompSiffror && kandidatSiffror && kandidatSiffror === kompSiffror && 95 > bästaPoäng) {
-                    bästaPoäng = 95;
-                    bästaText = `Exakt sifferträff på komp.nr ${k.komp}`;
-                    matchTyp = "komp";
-                }
-
-                if (kompPoäng > bästaPoäng) {
-                    bästaPoäng = kompPoäng;
-                    bästaText = `Kandidat ${kandidat} liknar komp.nr ${k.komp}`;
-                    matchTyp = "komp";
-                }
-            }
-        });
-
-        if (bästaPoäng >= 60) {
-            matcher.push({
-                komponent: k,
-                poäng: bästaPoäng,
-                text: bästaText,
-                matchTyp
-            });
-        }
-    });
-
-    return matcher
-        .sort((a, b) => {
-            if (b.poäng !== a.poäng) return b.poäng - a.poäng;
-            if (a.matchTyp === "art" && b.matchTyp !== "art") return -1;
-            if (b.matchTyp === "art" && a.matchTyp !== "art") return 1;
-            return 0;
-        })
         .slice(0, 3);
 }
 
